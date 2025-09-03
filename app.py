@@ -3,22 +3,22 @@ import pandas as pd
 import io
 
 # Настройка страницы
-st.set_page_config(page_title="Обработка файла Стоков", layout="centered")
-st.title("📊 Обработка файла .xls")
-st.markdown("Загрузите файл — получите сводную таблицу по категориям и СКЮ КОДАМ.")
+st.set_page_config(page_title="Объединённый анализ сетей", layout="centered")
+st.title("📊 Обработка нескольких файлов (ГРИН, Санта и др.)")
+st.markdown("Загрузите файлы от разных сетей — получите один сводный отчёт.")
 
-def process_greens_file(uploaded_file):
+def process_file(uploaded_file):
     # Читаем файл
     try:
         df = pd.read_excel(uploaded_file, header=None)
     except Exception as e:
-        st.error(f"Ошибка чтения файла: {e}")
+        st.error(f"Ошибка чтения файла {uploaded_file.name}: {e}")
         return None
 
     # Ищем строку с "Сеть"
     header_row_idx = df[df[0] == "Сеть"].index
     if len(header_row_idx) == 0:
-        st.error("❌ Не найдена строка с 'Сеть' в первом столбце.")
+        st.warning(f"❌ Не найдена строка с 'Сеть' в файле: {uploaded_file.name}")
         return None
     header_row_idx = header_row_idx[0]
 
@@ -26,17 +26,20 @@ def process_greens_file(uploaded_file):
     df.columns = df.iloc[header_row_idx]
     df = df[header_row_idx + 1:].reset_index(drop=True)
 
-    # Переименуем для удобства
+    # Очищаем названия столбцов
     df.columns = [str(col).strip() for col in df.columns]
 
-    # Проверяем нужные столбцы
+    # Проверяем обязательные столбцы
     required_cols = ["Адрес торгового объекта", "Описание номенклатуры", "Штрих_код", "Остаток"]
     for col in required_cols:
         if col not in df.columns:
-            st.error(f"❌ Не найден столбец: {col}")
+            st.error(f"❌ В файле {uploaded_file.name} не найден столбец: {col}")
             return None
 
-    # === Функция для СКЮ КОД ===
+    # Извлекаем название сети из первой строки данных
+    network = df["Сеть"].dropna().iloc[0] if "Сеть" in df.columns else "Неизвестно"
+
+    # Функция для СКЮ КОД
     def get_sku(barcode):
         try:
             barcode_str = str(int(barcode))
@@ -48,7 +51,7 @@ def process_greens_file(uploaded_file):
         except:
             return "0000"
 
-    # === Функция для Категории ===
+    # Функция для Категории
     def get_category(name):
         if pd.isna(name) or not isinstance(name, str):
             return "Прочие"
@@ -70,12 +73,11 @@ def process_greens_file(uploaded_file):
     df["Категория"] = df["Описание номенклатуры"].apply(get_category)
     df["СКЮ КОД"] = df["Штрих_код"].apply(get_sku)
 
-    # Приводим "Остаток" к числу — с обработкой строк
+    # Очистка и преобразование Остаток
     def safe_to_numeric(val):
         if pd.isna(val):
             return 0
         if isinstance(val, str):
-            # Убираем пробелы, заменяем запятую на точку
             val_clean = val.replace(",", ".").strip()
             try:
                 return float(val_clean)
@@ -91,43 +93,56 @@ def process_greens_file(uploaded_file):
     if df_filtered.empty:
         return None
 
+    # Добавляем имя сети
+    df_filtered["Сеть"] = network
+
     # Группировка: Адрес + Категория → список СКЮ КОДОВ
     pivot = df_filtered.groupby(
-        ["Адрес торгового объекта", "Категория"], as_index=False
+        ["Сеть", "Адрес торгового объекта", "Категория"], as_index=False
     )["СКЮ КОД"].apply(lambda x: ", ".join(x)).rename(columns={"СКЮ КОД": "СКЮ КОДЫ"})
 
     return pivot
 
 # === Интерфейс ===
-uploaded_file = st.file_uploader("Загрузите файл стоков", type=["xls", "xlsx"])
+uploaded_files = st.file_uploader(
+    "Загрузите файлы от разных сетей",
+    type=["xls", "xlsx"],
+    accept_multiple_files=True
+)
 
-if uploaded_file is not None:
-    with st.spinner("Обработка файла..."):
-        try:
-            result_df = process_greens_file(uploaded_file)
-            if result_df is None or len(result_df) == 0:
-                st.warning("⚠️ В файле нет позиций с остатком больше 0.")
-            else:
-                st.success("✅ Обработка завершена!")
-                st.dataframe(result_df, use_container_width=True)
+if uploaded_files:
+    with st.spinner("Обработка файлов..."):
+        all_data = []
 
-                # Подготовка файла для скачивания
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    result_df.to_excel(writer, index=False, sheet_name="СводнаяТаблица")
-                output.seek(0)
+        for file in uploaded_files:
+            st.info(f"Обработка: {file.name}")
+            result = process_file(file)
+            if result is not None:
+                all_data.append(result)
 
-                st.download_button(
-                    label="📥 Скачать результат (Excel)",
-                    data=output,
-                    file_name="СводнаяТаблица_Грин.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-        except Exception as e:
-            st.error(f"❌ Ошибка при обработке файла: {str(e)}")
+        if not all_data:
+            st.warning("❌ Ни в одном файле не найдены позиции с остатком > 0.")
+        else:
+            # Объединяем все данные
+            final_df = pd.concat(all_data, ignore_index=True)
+
+            # Сортируем: сначала по Сети, потом по Адресу
+            final_df = final_df.sort_values(by=["Сеть", "Адрес торгового объекта"]).reset_index(drop=True)
+
+            st.success("✅ Все файлы обработаны!")
+            st.dataframe(final_df, use_container_width=True)
+
+            # Подготовка файла для скачивания
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                final_df.to_excel(writer, index=False, sheet_name="Сводная по сетям")
+            output.seek(0)
+
+            st.download_button(
+                label="📥 Скачать общий сводный файл (Excel)",
+                data=output,
+                file_name="Сводная_по_всем_сетям.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 else:
-    st.info("Пожалуйста, загрузите файл.")
-
-# Информация
-st.markdown("---")
-st.caption("Приложение обрабатывает файл по правилам: категории, СКЮ КОД из 5→4 цифр, фильтр по остатку > 0.")
+    st.info("Пожалуйста, загрузите один или несколько файлов.")
