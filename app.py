@@ -1,45 +1,45 @@
 import streamlit as st
 import pandas as pd
 import io
-pd.set_option('use_inf_as_na', True)  # Дополнительная настройка
 
-# Обработка .xls и .xlsx
-try:
-    df = pd.read_excel(uploaded_file, header=None)
-except Exception as e:
-    st.error(f"Ошибка чтения файла: {e}")
 # Настройка страницы
-st.set_page_config(page_title="Грин: Обработка данных", layout="centered")
+st.set_page_config(page_title="Обработка файла Грин.xls", layout="centered")
 st.title("📊 Обработка файла Грин.xls")
 st.markdown("Загрузите файл — получите сводную таблицу по категориям и СКЮ КОДАМ.")
 
 def process_greens_file(uploaded_file):
-    # Читаем файл без заголовков
-    df = pd.read_excel(uploaded_file, header=None)
+    # Читаем файл с обработкой обоих форматов
+    try:
+        df = pd.read_excel(uploaded_file, header=None)
+    except Exception as e:
+        st.error(f"Ошибка чтения файла: {e}")
+        return None
 
     # Ищем строку с "Сеть" в первом столбце
     header_row_idx = df[df[0] == "Сеть"].index
     if len(header_row_idx) == 0:
-        raise ValueError("Не найдена строка с 'Сеть' в первом столбце.")
+        st.error("❌ Не найдена строка с 'Сеть' в первом столбце.")
+        return None
     header_row_idx = header_row_idx[0]
 
     # Устанавливаем заголовки
     df.columns = df.iloc[header_row_idx]
     df = df[header_row_idx + 1:].reset_index(drop=True)
 
-    # Переименуем для удобства (на случай, если есть пробелы)
+    # Переименуем для удобства
     df.columns = [str(col).strip() for col in df.columns]
 
-    # Проверим нужные столбцы
+    # Проверяем нужные столбцы
     required_cols = ["Адрес торгового объекта", "Описание номенклатуры", "Штрих_код", "Остаток"]
     for col in required_cols:
         if col not in df.columns:
-            raise ValueError(f"Не найден столбец: {col}")
+            st.error(f"❌ Не найден столбец: {col}")
+            return None
 
     # === Функция для СКЮ КОД ===
     def get_sku(barcode):
         try:
-            barcode_str = str(int(barcode))  # Убираем .0
+            barcode_str = str(int(barcode))
             if len(barcode_str) >= 5:
                 last_5 = barcode_str[-5:]
                 return last_5[:4].zfill(4)  # 4 цифры с ведущими нулями
@@ -77,7 +77,7 @@ def process_greens_file(uploaded_file):
     df_filtered = df[df["Остаток"] > 0].copy()
 
     if df_filtered.empty:
-        return None  # Нет данных с остатком > 0
+        return None
 
     # Группировка: Адрес + Категория → список СКЮ КОДОВ
     pivot = df_filtered.groupby(
@@ -118,5 +118,4 @@ else:
 
 # Информация
 st.markdown("---")
-
 st.caption("Приложение обрабатывает файл по правилам: категории, СКЮ КОД из 5→4 цифр, фильтр по остатку > 0.")
