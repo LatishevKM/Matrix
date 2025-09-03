@@ -1,7 +1,13 @@
 import streamlit as st
 import pandas as pd
 import io
+pd.set_option('use_inf_as_na', True)  # Дополнительная настройка
 
+# Обработка .xls и .xlsx
+try:
+    df = pd.read_excel(uploaded_file, header=None)
+except Exception as e:
+    st.error(f"Ошибка чтения файла: {e}")
 # Настройка страницы
 st.set_page_config(page_title="Грин: Обработка данных", layout="centered")
 st.title("📊 Обработка файла Грин.xls")
@@ -112,4 +118,5 @@ else:
 
 # Информация
 st.markdown("---")
+
 st.caption("Приложение обрабатывает файл по правилам: категории, СКЮ КОД из 5→4 цифр, фильтр по остатку > 0.")
