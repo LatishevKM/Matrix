@@ -3,8 +3,8 @@ import pandas as pd
 import io
 
 # Настройка страницы
-st.set_page_config(page_title="Обработка файла Грин.xls", layout="centered")
-st.title("📊 Обработка файла Грин.xls")
+st.set_page_config(page_title="Обработка файла Стоков", layout="centered")
+st.title("📊 Обработка файла .xls")
 st.markdown("Загрузите файл — получите сводную таблицу по категориям и СКЮ КОДАМ.")
 
 def process_greens_file(uploaded_file):
@@ -99,7 +99,7 @@ def process_greens_file(uploaded_file):
     return pivot
 
 # === Интерфейс ===
-uploaded_file = st.file_uploader("Загрузите файл Грин.xls", type=["xls", "xlsx"])
+uploaded_file = st.file_uploader("Загрузите файл стоков", type=["xls", "xlsx"])
 
 if uploaded_file is not None:
     with st.spinner("Обработка файла..."):
