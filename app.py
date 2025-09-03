@@ -8,14 +8,14 @@ st.title("📊 Обработка файла Грин.xls")
 st.markdown("Загрузите файл — получите сводную таблицу по категориям и СКЮ КОДАМ.")
 
 def process_greens_file(uploaded_file):
-    # Читаем файл с обработкой обоих форматов
+    # Читаем файл
     try:
         df = pd.read_excel(uploaded_file, header=None)
     except Exception as e:
         st.error(f"Ошибка чтения файла: {e}")
         return None
 
-    # Ищем строку с "Сеть" в первом столбце
+    # Ищем строку с "Сеть"
     header_row_idx = df[df[0] == "Сеть"].index
     if len(header_row_idx) == 0:
         st.error("❌ Не найдена строка с 'Сеть' в первом столбце.")
@@ -42,7 +42,7 @@ def process_greens_file(uploaded_file):
             barcode_str = str(int(barcode))
             if len(barcode_str) >= 5:
                 last_5 = barcode_str[-5:]
-                return last_5[:4].zfill(4)  # 4 цифры с ведущими нулями
+                return last_5[:4].zfill(4)
             else:
                 return "0000"
         except:
@@ -70,8 +70,20 @@ def process_greens_file(uploaded_file):
     df["Категория"] = df["Описание номенклатуры"].apply(get_category)
     df["СКЮ КОД"] = df["Штрих_код"].apply(get_sku)
 
-    # Приводим "Остаток" к числу
-    df["Остаток"] = pd.to_numeric(df["Остаток"], errors="coerce").fillna(0)
+    # Приводим "Остаток" к числу — с обработкой строк
+    def safe_to_numeric(val):
+        if pd.isna(val):
+            return 0
+        if isinstance(val, str):
+            # Убираем пробелы, заменяем запятую на точку
+            val_clean = val.replace(",", ".").strip()
+            try:
+                return float(val_clean)
+            except:
+                return 0
+        return float(val)
+
+    df["Остаток"] = df["Остаток"].apply(safe_to_numeric)
 
     # Фильтр: только где Остаток > 0
     df_filtered = df[df["Остаток"] > 0].copy()
@@ -94,7 +106,7 @@ if uploaded_file is not None:
         try:
             result_df = process_greens_file(uploaded_file)
             if result_df is None or len(result_df) == 0:
-                st.warning("❌ В файле нет позиций с остатком больше 0.")
+                st.warning("⚠️ В файле нет позиций с остатком больше 0.")
             else:
                 st.success("✅ Обработка завершена!")
                 st.dataframe(result_df, use_container_width=True)
